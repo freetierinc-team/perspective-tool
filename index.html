@@ -1,0 +1,1800 @@
+<!DOCTYPE html>
+<html lang="ja"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>斜め撮り → 正面化</title>
+    <style>
+        html {
+            scrollbar-gutter: stable;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+            background: #ffffff;
+            min-height: 100vh;
+            color: #111;
+            line-height: 1.5;
+            box-sizing: border-box;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        .container {
+            background: #ffffff;
+            padding: 0;
+        }
+
+        h1 {
+            text-align: left;
+            color: #111;
+            margin: 0 0 24px;
+            font-size: 1.75em;
+            font-weight: 600;
+            border-bottom: 1px solid #e5e5e5;
+            padding-bottom: 16px;
+        }
+
+        .upload-section {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .file-input-wrapper {
+            position: relative;
+            display: inline-block;
+            cursor: pointer;
+            background: #111;
+            color: #ffffff;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            transition: background 0.15s ease;
+        }
+
+        .file-input-wrapper:hover {
+            background: #333;
+        }
+
+        .file-input-wrapper input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .instruction {
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            border-radius: 4px;
+            padding: 16px;
+            margin: 16px 0 24px;
+            text-align: left;
+            color: #444;
+            font-size: 14px;
+            line-height: 1.7;
+        }
+
+        .instruction ol {
+            margin: 6px 0 0;
+            padding-left: 1.4em;
+        }
+
+        .preview-toggle {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            color: #444;
+            flex-wrap: wrap;
+        }
+
+        .preview-toggle label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .preview-toggle input[type="checkbox"] {
+            accent-color: #111;
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .preview-toggle .hint {
+            color: #888;
+            font-size: 12px;
+        }
+
+        .canvas-container {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .col-left,
+        .col-right {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            min-width: 0;
+        }
+
+        /* PC幅: 左=元画像+操作、右=補正結果(スクロールしても見える) */
+        @media (min-width: 900px) {
+            .canvas-container {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                gap: 16px;
+                align-items: start;
+            }
+
+            .col-right {
+                position: sticky;
+                top: 16px;
+            }
+        }
+
+        .canvas-wrapper {
+            width: 100%;
+            text-align: center;
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            border-radius: 4px;
+            padding: 12px;
+        }
+
+        .canvas-wrapper h3 {
+            margin: 0 0 8px 0;
+            color: #444;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: left;
+        }
+
+        .canvas-stage {
+            width: 100%;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #ddd;
+            border-radius: 2px;
+            background: #ffffff;
+            transition: border-color 0.15s ease;
+        }
+
+        #originalCanvas {
+            cursor: crosshair;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        #originalCanvas:hover {
+            border-color: #999;
+        }
+
+        .placeholder {
+            padding: 32px 12px;
+            color: #999;
+            font-size: 13px;
+            border: 1px dashed #ddd;
+            border-radius: 2px;
+            background: #ffffff;
+        }
+
+        /* 操作パネル(元画像の下) */
+        .op-panel {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            text-align: left;
+        }
+
+        .op-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .point-list {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+        }
+
+        button.point-item {
+            background: #ffffff;
+            padding: 6px 4px;
+            border-radius: 3px;
+            text-align: center;
+            font-size: 12px;
+            line-height: 1.35;
+            border: 1px solid #ddd;
+            color: #666;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 0;
+            touch-action: manipulation;
+        }
+
+        button.point-item:hover {
+            background: #f5f5f5;
+            color: #111;
+            border-color: #999;
+        }
+
+        button.point-item .pi-label {
+            font-weight: 600;
+        }
+
+        button.point-item .pi-coord {
+            font-variant-numeric: tabular-nums;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        button.point-item.active,
+        button.point-item.active:hover {
+            background: #111;
+            color: #ffffff;
+            border-color: #111;
+        }
+
+        button.point-item:disabled {
+            background: #f0f0f0;
+            color: #999;
+            border-color: #e5e5e5;
+        }
+
+        .op-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .dpad {
+            display: grid;
+            grid-template-columns: repeat(3, 48px);
+            grid-template-rows: repeat(3, 48px);
+            gap: 6px;
+            flex: none;
+        }
+
+        .dpad button {
+            width: 48px;
+            height: 48px;
+            padding: 0;
+            font-size: 18px;
+            line-height: 1;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        .dpad button.pressed {
+            background: #444;
+            border-color: #444;
+        }
+
+        .dpad .up    { grid-column: 2; grid-row: 1; }
+        .dpad .left  { grid-column: 1; grid-row: 2; }
+        .dpad .right { grid-column: 3; grid-row: 2; }
+        .dpad .down  { grid-column: 2; grid-row: 3; }
+
+        .dpad-center {
+            grid-column: 2;
+            grid-row: 2;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: #666;
+            border: 1px dashed #ddd;
+            border-radius: 4px;
+            background: #ffffff;
+            text-align: center;
+            line-height: 1.2;
+        }
+
+        .op-options {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .seg {
+            display: inline-flex;
+        }
+
+        .seg button {
+            padding: 6px 10px;
+            font-size: 12px;
+            background: #ffffff;
+            color: #111;
+            border: 1px solid #ddd;
+            border-radius: 0;
+            margin-left: -1px;
+            touch-action: manipulation;
+        }
+
+        .seg button:first-child {
+            margin-left: 0;
+            border-radius: 4px 0 0 4px;
+        }
+
+        .seg button:last-child {
+            border-radius: 0 4px 4px 0;
+        }
+
+        .seg button:hover {
+            background: #f5f5f5;
+            color: #111;
+            border-color: #999;
+        }
+
+        .seg button[aria-pressed="true"] {
+            background: #111;
+            color: #ffffff;
+            border-color: #111;
+            position: relative;
+        }
+
+        .seg button[aria-pressed="true"]:hover {
+            background: #333;
+            border-color: #333;
+            color: #ffffff;
+        }
+
+        .op-hint {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .controls {
+            text-align: left;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #111;
+            color: #ffffff;
+            border: 1px solid #111;
+            padding: 10px 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        button:hover {
+            background: #333;
+            border-color: #333;
+        }
+
+        button:disabled,
+        button:disabled:hover {
+            background: #f0f0f0;
+            color: #999;
+            border-color: #e5e5e5;
+            cursor: not-allowed;
+        }
+
+        .secondary-btn {
+            background: #ffffff;
+            color: #111;
+            border-color: #ddd;
+        }
+
+        .secondary-btn:hover {
+            background: #f5f5f5;
+            color: #111;
+            border-color: #999;
+        }
+
+        .status {
+            margin-top: 0;
+            padding: 10px 14px;
+            border-radius: 3px;
+            text-align: left;
+            font-size: 13px;
+            background: #fafafa;
+            border: 1px solid #e5e5e5;
+            border-left: 3px solid #999;
+            color: #444;
+        }
+
+        .status.success {
+            border-left-color: #111;
+            color: #111;
+        }
+
+        .status.error {
+            border-left-color: #111;
+            color: #111;
+            font-weight: 500;
+        }
+
+        .status.info {
+            border-left-color: #999;
+            color: #444;
+        }
+
+        @media (max-width: 600px) {
+            body {
+                padding: 20px 16px;
+            }
+
+            h1 {
+                font-size: 1.4em;
+            }
+
+            .canvas-wrapper {
+                padding: 8px;
+            }
+
+            .point-list {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>斜め撮り → 正面化</h1>
+
+        <div class="upload-section">
+            <div class="file-input-wrapper">
+                <input type="file" id="imageInput" accept="image/*">
+                画像をアップロード
+            </div>
+        </div>
+
+        <div class="instruction">
+            <strong>使い方:</strong>
+            <ol>
+                <li>画面幅900px以上では、左に元画像と操作パネル、右に補正結果が並びます（右はスクロールしても見えます）。画像をアップロードすると、四隅付近に4点が自動配置されます（点1=左上 → 2=右上 → 3=右下 → 4=左下 の時計回り）。</li>
+                <li>各点をドラッグして、補正したい四角形の角に大まかに合わせます。点は掴んだ位置からずれずに動きます。</li>
+                <li>点を選ぶとルーペ（拡大表示）が出ます。ドラッグ中は指で隠れないよう、点と反対側の隅に表示されます。倍率は 2x / 4x / 8x で切り替えられます。</li>
+                <li>元画像の下の「点1〜点4」で点を選び、十字ボタンで微調整します。移動量は 1px / 5px / 20px（元画像のピクセル単位）。ボタン長押しで連続移動します。キーボードの矢印キーでも動かせます（Shift+矢印で10px）。</li>
+                <li>点のない場所をタップ/クリック、または Esc キーで選択を解除するとルーペが消えます。</li>
+                <li>「補正実行」で結果を更新します（またはリアルタイムプレビューをオン）。プレビューは縮小して計算し、「補正実行」と「結果をダウンロード」はフル解像度で計算します。</li>
+                <li>Ctrl+Z または「元に戻す」で取り消せます（ドラッグは1回ごと、連続した微調整はひとまとまりで取り消し）。</li>
+            </ol>
+        </div>
+
+        <div class="preview-toggle">
+            <label>
+                <input type="checkbox" id="realtimePreview"> リアルタイムプレビュー
+            </label>
+            <span class="hint">点を動かすたびに補正結果を自動更新します（縮小プレビュー）</span>
+        </div>
+
+        <div class="canvas-container">
+          <div class="col-left">
+            <div class="canvas-wrapper">
+                <h3>元画像（4点を角に合わせて調整）</h3>
+                <div class="canvas-stage" id="originalStage">
+                    <canvas id="originalCanvas" width="0" height="0" style="display: none;"></canvas>
+                    <div class="placeholder" id="originalPlaceholder">画像をアップロードしてください</div>
+                </div>
+
+                <div class="op-panel">
+                    <div>
+                        <div class="op-label">点を選択（座標は元画像のピクセル）</div>
+                        <div class="point-list" id="pointList">
+                            <button type="button" class="point-item" id="point1" data-index="0" disabled></button>
+                            <button type="button" class="point-item" id="point2" data-index="1" disabled></button>
+                            <button type="button" class="point-item" id="point3" data-index="2" disabled></button>
+                            <button type="button" class="point-item" id="point4" data-index="3" disabled></button>
+                        </div>
+                    </div>
+
+                    <div class="op-row">
+                        <div class="dpad" id="dpad">
+                            <button type="button" class="up" data-dx="0" data-dy="-1" aria-label="上へ移動" disabled>↑</button>
+                            <button type="button" class="left" data-dx="-1" data-dy="0" aria-label="左へ移動" disabled>←</button>
+                            <div class="dpad-center" id="dpadCenter">未選択</div>
+                            <button type="button" class="right" data-dx="1" data-dy="0" aria-label="右へ移動" disabled>→</button>
+                            <button type="button" class="down" data-dx="0" data-dy="1" aria-label="下へ移動" disabled>↓</button>
+                        </div>
+
+                        <div class="op-options">
+                            <div>
+                                <div class="op-label">移動量</div>
+                                <div class="seg" id="stepGroup">
+                                    <button type="button" data-step="1" aria-pressed="true">1px</button>
+                                    <button type="button" data-step="5" aria-pressed="false">5px</button>
+                                    <button type="button" data-step="20" aria-pressed="false">20px</button>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="op-label">ルーペ倍率</div>
+                                <div class="seg" id="zoomGroup">
+                                    <button type="button" data-zoom="2" aria-pressed="false">2x</button>
+                                    <button type="button" data-zoom="4" aria-pressed="true">4x</button>
+                                    <button type="button" data-zoom="8" aria-pressed="false">8x</button>
+                                </div>
+                            </div>
+                            <div class="op-hint">長押しで連続移動</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="correctBtn" disabled>補正実行</button>
+                <button id="undoBtn" class="secondary-btn" disabled>元に戻す</button>
+                <button id="downloadBtn" class="secondary-btn" disabled>結果をダウンロード</button>
+            </div>
+
+            <div id="status" class="status" style="display: none;"></div>
+          </div>
+
+          <div class="col-right">
+            <div class="canvas-wrapper">
+                <h3>補正結果</h3>
+                <div class="canvas-stage" id="correctedStage">
+                    <canvas id="correctedCanvas" width="0" height="0" style="display: none;"></canvas>
+                    <div class="placeholder" id="correctedPlaceholder">補正結果がここに表示されます</div>
+                </div>
+            </div>
+          </div>
+        </div>
+    </div>
+
+    <script>
+        const POINT_NAMES = ['左上', '右上', '右下', '左下'];
+
+        class PerspectiveCorrection {
+            constructor() {
+                this.originalCanvas = document.getElementById('originalCanvas');
+                this.correctedCanvas = document.getElementById('correctedCanvas');
+                this.originalCtx = this.originalCanvas.getContext('2d');
+                this.correctedCtx = this.correctedCanvas.getContext('2d');
+                this.originalStage = document.getElementById('originalStage');
+                this.correctedStage = document.getElementById('correctedStage');
+
+                this.image = null;
+                // 点は「元画像ピクセル座標」で保持し、描画時に表示座標へ換算する
+                this.points = [];
+                this.maxPoints = 4;
+                this.draggingIndex = -1;
+                this.dragPointerId = null;
+                this.dragOffset = { x: 0, y: 0 };
+                this.dragHistoryPushed = false;
+                this.selectedIndex = -1;
+                this.mouseHitRadius = 12;   // 表示px
+                this.touchHitRadius = 24;   // 表示px
+                this.history = [];
+                this.maxHistory = 50;
+                this.nudgeMergeMs = 800;
+                this.lastNudgeTime = 0;
+                this.lastNudgeIndex = -1;
+                this.previewRequested = false;
+                this.realtimePreview = false;
+                this.previewMaxSide = 600;
+                this.busy = false;
+
+                // 表示サイズと換算係数(表示px / 元画像px)
+                this.displayWidth = 0;
+                this.displayHeight = 0;
+                this.viewScaleX = 1;
+                this.viewScaleY = 1;
+                this.displayCache = null;
+                this.lastLayoutKey = '';
+
+                // ルーペ
+                this.loupeZoom = 4;
+                this.loupeCorner = null;
+                this.loupeRect = null;
+
+                // 十字ボタン
+                this.dpadStep = 1;
+                this.repeatStoppers = [];
+
+                // 補正結果
+                this.srcImageData = null;
+                this.pointsVersion = 0;
+                this.resultCanvas = null;      // フル解像度の結果(ダウンロード用)
+                this.resultVersion = -1;
+                this.displayedResult = null;   // 表示中の結果 { canvas, width, height }
+
+                this.statusTimer = null;
+
+                this.initEventListeners();
+                this.updatePointDisplay();
+                this.updateControls();
+            }
+
+            initEventListeners() {
+                document.getElementById('imageInput').addEventListener('change', (e) => {
+                    this.loadImage(e.target.files[0]);
+                    e.target.value = '';
+                });
+
+                const c = this.originalCanvas;
+                c.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
+                c.addEventListener('pointermove', (e) => this.handlePointerMove(e));
+                c.addEventListener('pointerup', (e) => this.handlePointerUp(e));
+                c.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
+                c.addEventListener('lostpointercapture', (e) => this.handlePointerUp(e));
+                c.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                document.getElementById('correctBtn').addEventListener('click', () => {
+                    this.runHeavy('補正中…', () => this.performCorrection(false, false));
+                });
+                document.getElementById('undoBtn').addEventListener('click', () => this.undo());
+                document.getElementById('downloadBtn').addEventListener('click', () => this.downloadResult());
+
+                const realtimeCheckbox = document.getElementById('realtimePreview');
+                realtimeCheckbox.checked = this.realtimePreview;
+                realtimeCheckbox.addEventListener('change', (e) => {
+                    this.realtimePreview = e.target.checked;
+                    this.updateControls();
+                    if (this.realtimePreview) this.schedulePreview();
+                });
+
+                // 点の選択ボタン(選択中の点を再度押すと選択解除)
+                document.querySelectorAll('#pointList .point-item').forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const idx = Number(btn.dataset.index);
+                        this.selectPoint(this.selectedIndex === idx ? -1 : idx);
+                    });
+                });
+
+                // 十字ボタン(長押しリピート)
+                document.querySelectorAll('#dpad button').forEach((btn) => {
+                    const dx = Number(btn.dataset.dx);
+                    const dy = Number(btn.dataset.dy);
+                    this.setupRepeatButton(btn, () => this.nudge(dx * this.dpadStep, dy * this.dpadStep));
+                });
+                const stopAllRepeats = () => this.repeatStoppers.forEach((stop) => stop());
+                window.addEventListener('blur', stopAllRepeats);
+                document.addEventListener('visibilitychange', () => {
+                    if (document.hidden) stopAllRepeats();
+                });
+
+                // 移動量・ルーペ倍率
+                this.setupSegmented('stepGroup', 'step', (v) => { this.dpadStep = v; });
+                this.setupSegmented('zoomGroup', 'zoom', (v) => {
+                    this.loupeZoom = v;
+                    if (this.image) this.drawOriginalImage();
+                });
+
+                document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+
+                // リサイズ時は点(元画像px)を保ったまま表示サイズを再計算
+                const onResize = () => {
+                    if (this.resizeRaf) return;
+                    this.resizeRaf = requestAnimationFrame(() => {
+                        this.resizeRaf = 0;
+                        this.handleResize();
+                    });
+                };
+                window.addEventListener('resize', onResize);
+                if ('ResizeObserver' in window) {
+                    const ro = new ResizeObserver(onResize);
+                    ro.observe(this.originalStage);
+                    ro.observe(this.correctedStage);
+                }
+            }
+
+            setupSegmented(groupId, key, onChange) {
+                const buttons = document.querySelectorAll(`#${groupId} button`);
+                buttons.forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        buttons.forEach((b) => b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'));
+                        onChange(Number(btn.dataset[key]));
+                    });
+                });
+            }
+
+            // 押下で1回実行 → 350ms後から50ms間隔でリピート。マウス・タッチ共通(Pointer Events)
+            setupRepeatButton(btn, action) {
+                let delayTimer = null;
+                let repeatTimer = null;
+                let activePointerId = null;
+
+                const stop = () => {
+                    clearTimeout(delayTimer);
+                    clearInterval(repeatTimer);
+                    delayTimer = null;
+                    repeatTimer = null;
+                    if (activePointerId !== null) {
+                        const id = activePointerId;
+                        activePointerId = null;
+                        btn.classList.remove('pressed');
+                        try {
+                            if (btn.hasPointerCapture(id)) btn.releasePointerCapture(id);
+                        } catch (_) { /* 既に解放済み */ }
+                    }
+                };
+
+                btn.addEventListener('pointerdown', (e) => {
+                    if (btn.disabled) return;
+                    if (e.pointerType === 'mouse' && e.button !== 0) return;
+                    e.preventDefault();
+                    stop();
+                    activePointerId = e.pointerId;
+                    try { btn.setPointerCapture(e.pointerId); } catch (_) { /* 非対応環境 */ }
+                    btn.classList.add('pressed');
+                    action();
+                    delayTimer = setTimeout(() => {
+                        repeatTimer = setInterval(() => {
+                            if (btn.disabled || activePointerId === null) {
+                                stop();
+                                return;
+                            }
+                            action();
+                        }, 50);
+                    }, 350);
+                });
+
+                // 押したまま指がボタン外へ出たら停止(キャプチャ中は pointerleave が来ないため座標で判定)
+                btn.addEventListener('pointermove', (e) => {
+                    if (activePointerId !== e.pointerId) return;
+                    const r = btn.getBoundingClientRect();
+                    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
+                        stop();
+                    }
+                });
+
+                ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'].forEach((type) => {
+                    btn.addEventListener(type, (e) => {
+                        if (activePointerId === null || e.pointerId === activePointerId) stop();
+                    });
+                });
+
+                // キーボード(Enter/Space)による操作。ポインター由来のclick(detail>0)は無視
+                btn.addEventListener('click', (e) => {
+                    if (e.detail === 0) action();
+                });
+                btn.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                this.repeatStoppers.push(stop);
+            }
+
+            loadImage(file) {
+                if (!file) return;
+
+                const url = URL.createObjectURL(file);
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(url);
+                    this.image = img;
+                    this.srcImageData = null;
+                    this.resultCanvas = null;
+                    this.resultVersion = -1;
+                    this.displayedResult = null;
+                    this.correctedCanvas.style.display = 'none';
+                    document.getElementById('correctedPlaceholder').style.display = '';
+                    document.getElementById('originalPlaceholder').style.display = 'none';
+                    this.originalCanvas.style.display = '';
+                    document.getElementById('downloadBtn').disabled = true;
+
+                    this.layoutOriginal();
+                    this.initPoints();
+                    this.history = [];
+                    this.lastNudgeTime = 0;
+                    this.selectedIndex = -1;
+                    this.draggingIndex = -1;
+                    this.loupeCorner = null;
+                    this.pointsVersion++;
+                    this.updatePointDisplay();
+                    this.updateControls();
+                    this.drawOriginalImage();
+                    this.schedulePreview();
+                    this.showStatus(`画像を読み込みました（${img.width}×${img.height}px）。4点を角に合わせてください。`, 'info');
+                };
+                img.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    this.showStatus('画像を読み込めませんでした。', 'error');
+                };
+                img.src = url;
+            }
+
+            viewportHeight() {
+                // モバイルのアドレスバー伸縮で揺れにくい値を優先
+                return document.documentElement.clientHeight || window.innerHeight;
+            }
+
+            layoutKey() {
+                const availW = this.originalStage.clientWidth;
+                const availH = this.viewportHeight();
+                const dpr = window.devicePixelRatio || 1;
+                return `${availW}x${this.correctedStage.clientWidth}x${availH}x${dpr}`;
+            }
+
+            // 元画像キャンバスの表示サイズ: 幅=左カラム(ステージ)の実幅、高さ上限=75vh、アスペクト維持
+            layoutOriginal() {
+                const availW = Math.max(100, this.originalStage.clientWidth - 2); // canvas の border 分
+                const availH = Math.max(160, Math.floor(this.viewportHeight() * 0.75));
+                const ratio = Math.min(availW / this.image.width, availH / this.image.height);
+
+                const width = Math.max(1, Math.floor(this.image.width * ratio));
+                const height = Math.max(1, Math.floor(this.image.height * ratio));
+
+                this.displayWidth = width;
+                this.displayHeight = height;
+                this.viewScaleX = width / this.image.width;
+                this.viewScaleY = height / this.image.height;
+
+                this.applyCanvasDpr(this.originalCanvas, this.originalCtx, width, height);
+
+                // 表示サイズに縮小した画像をキャッシュ(毎フレームの大画像縮小描画を避ける)
+                const dpr = window.devicePixelRatio || 1;
+                const cache = document.createElement('canvas');
+                cache.width = Math.round(width * dpr);
+                cache.height = Math.round(height * dpr);
+                const cctx = cache.getContext('2d');
+                cctx.imageSmoothingQuality = 'high';
+                cctx.drawImage(this.image, 0, 0, cache.width, cache.height);
+                this.displayCache = cache;
+
+                this.lastLayoutKey = this.layoutKey();
+            }
+
+            handleResize() {
+                if (!this.image) return;
+                if (this.layoutKey() === this.lastLayoutKey) return;
+                this.layoutOriginal();
+                this.loupeCorner = null;
+                this.drawOriginalImage();
+                this.renderCorrected();
+            }
+
+            applyCanvasDpr(canvas, ctx, cssWidth, cssHeight) {
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = Math.round(cssWidth * dpr);
+                canvas.height = Math.round(cssHeight * dpr);
+                canvas.style.width = cssWidth + 'px';
+                canvas.style.height = cssHeight + 'px';
+                // 以降の描画コマンドをCSS座標系で書けるようにする
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            }
+
+            // ---- 座標換算(元画像px ⇔ 表示px) ----
+            toDisplay(p) {
+                return { x: p.x * this.viewScaleX, y: p.y * this.viewScaleY };
+            }
+
+            toImage(x, y) {
+                return { x: x / this.viewScaleX, y: y / this.viewScaleY };
+            }
+
+            clampImagePoint(x, y) {
+                return {
+                    x: Math.max(0, Math.min(this.image.width, Math.round(x))),
+                    y: Math.max(0, Math.min(this.image.height, Math.round(y))),
+                };
+            }
+
+            // ポインター位置 → キャンバスの表示座標(border を除外し、CSS伸縮にも追従)
+            getCanvasCoords(e) {
+                const c = this.originalCanvas;
+                const rect = c.getBoundingClientRect();
+                const innerW = c.clientWidth || this.displayWidth;
+                const innerH = c.clientHeight || this.displayHeight;
+                return {
+                    x: (e.clientX - rect.left - c.clientLeft) * (this.displayWidth / innerW),
+                    y: (e.clientY - rect.top - c.clientTop) * (this.displayHeight / innerH),
+                };
+            }
+
+            drawOriginalImage() {
+                if (!this.image) return;
+                const ctx = this.originalCtx;
+                ctx.clearRect(0, 0, this.displayWidth, this.displayHeight);
+                ctx.imageSmoothingEnabled = true;
+                ctx.drawImage(this.displayCache || this.image, 0, 0, this.displayWidth, this.displayHeight);
+                this.drawPoints();
+                this.drawLoupe();
+            }
+
+            initPoints() {
+                const w = this.image.width;
+                const h = this.image.height;
+                const m = 0.1;
+                this.points = [
+                    { x: Math.round(w * m),       y: Math.round(h * m)       },
+                    { x: Math.round(w * (1 - m)), y: Math.round(h * m)       },
+                    { x: Math.round(w * (1 - m)), y: Math.round(h * (1 - m)) },
+                    { x: Math.round(w * m),       y: Math.round(h * (1 - m)) },
+                ];
+            }
+
+            // 表示座標(x, y)にある点のindex。ルーペに隠れている点は対象外、複数該当時は最も近い点
+            getPointAt(x, y, pointerType) {
+                const r = pointerType === 'touch' || pointerType === 'pen' ? this.touchHitRadius : this.mouseHitRadius;
+                const r2 = r * r;
+                let best = -1;
+                let bestD2 = Infinity;
+                for (let i = 0; i < this.points.length; i++) {
+                    const dp = this.toDisplay(this.points[i]);
+                    if (i !== this.selectedIndex && this.isInsideLoupe(dp)) continue;
+                    const dx = dp.x - x;
+                    const dy = dp.y - y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 <= r2 && d2 < bestD2) {
+                        best = i;
+                        bestD2 = d2;
+                    }
+                }
+                return best;
+            }
+
+            handlePointerDown(e) {
+                if (!this.image || this.busy) return;
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
+                if (this.draggingIndex >= 0) return; // 2本目の指などは無視
+
+                const pos = this.getCanvasCoords(e);
+                const idx = this.getPointAt(pos.x, pos.y, e.pointerType);
+
+                if (idx >= 0) {
+                    e.preventDefault();
+                    this.draggingIndex = idx;
+                    this.dragPointerId = e.pointerId;
+                    this.dragHistoryPushed = false;
+                    this.lastNudgeTime = 0;
+                    this.selectedIndex = idx;
+                    this.loupeCorner = null;
+                    // 掴んだ位置と点中心のずれを保持(点が指の中心へ飛ばないように)
+                    const dp = this.toDisplay(this.points[idx]);
+                    this.dragOffset = { x: dp.x - pos.x, y: dp.y - pos.y };
+                    try { this.originalCanvas.setPointerCapture(e.pointerId); } catch (_) { /* 非対応環境 */ }
+                    this.originalCanvas.style.cursor = 'grabbing';
+                    this.updatePointDisplay();
+                    this.updateControls();
+                    this.drawOriginalImage();
+                    return;
+                }
+
+                // ルーペ上のタップは何もしない
+                if (this.isInsideLoupe(pos)) return;
+
+                // 点の外をタップ: 選択中なら選択解除、未選択なら何もしない(誤操作防止)
+                if (this.selectedIndex >= 0) this.selectPoint(-1);
+            }
+
+            handlePointerMove(e) {
+                if (!this.image) return;
+
+                if (this.draggingIndex >= 0) {
+                    if (e.pointerId !== this.dragPointerId) return;
+                    const pos = this.getCanvasCoords(e);
+                    const ip = this.toImage(pos.x + this.dragOffset.x, pos.y + this.dragOffset.y);
+                    const next = this.clampImagePoint(ip.x, ip.y);
+                    const cur = this.points[this.draggingIndex];
+                    if (next.x === cur.x && next.y === cur.y) return;
+                    // ドラッグ1回=1履歴(実際に動いた時点で記録)
+                    if (!this.dragHistoryPushed) {
+                        this.pushHistory();
+                        this.dragHistoryPushed = true;
+                    }
+                    this.points[this.draggingIndex] = next;
+                    this.onPointsChanged();
+                    return;
+                }
+
+                if (e.pointerType === 'mouse') {
+                    const pos = this.getCanvasCoords(e);
+                    const idx = this.getPointAt(pos.x, pos.y, e.pointerType);
+                    this.originalCanvas.style.cursor = idx >= 0 ? 'grab' : 'crosshair';
+                }
+            }
+
+            handlePointerUp(e) {
+                if (this.draggingIndex < 0 || e.pointerId !== this.dragPointerId) return;
+                this.draggingIndex = -1;
+                this.dragPointerId = null;
+                this.originalCanvas.style.cursor = 'crosshair';
+                try {
+                    if (this.originalCanvas.hasPointerCapture(e.pointerId)) {
+                        this.originalCanvas.releasePointerCapture(e.pointerId);
+                    }
+                } catch (_) { /* 既に解放済み */ }
+                this.drawOriginalImage();
+            }
+
+            selectPoint(index) {
+                if (this.draggingIndex >= 0) return;
+                this.selectedIndex = index;
+                this.loupeCorner = null;
+                this.lastNudgeTime = 0;
+                this.updatePointDisplay();
+                this.updateControls();
+                if (this.image) this.drawOriginalImage();
+            }
+
+            isTextEntry(el) {
+                if (!el || !el.tagName) return false;
+                if (el.isContentEditable) return true;
+                const tag = el.tagName;
+                if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+                if (tag === 'INPUT') {
+                    const type = (el.type || '').toLowerCase();
+                    // チェックボックス等は矢印を使わないため対象外(クリック後のフォーカス残りで矢印が効かなくなるのを防ぐ)
+                    return !['checkbox', 'button', 'submit', 'reset', 'file', 'image', 'color'].includes(type);
+                }
+                return false;
+            }
+
+            handleKeyDown(e) {
+                if (this.isTextEntry(e.target)) return;
+
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'z') {
+                    e.preventDefault();
+                    this.undo();
+                    return;
+                }
+                if (!this.image) return;
+
+                if (e.key === 'Escape' && this.selectedIndex >= 0) {
+                    this.selectPoint(-1);
+                    return;
+                }
+                if (this.selectedIndex < 0 || e.ctrlKey || e.metaKey || e.altKey) return;
+
+                const step = e.shiftKey ? 10 : 1;
+                let dx = 0, dy = 0;
+                switch (e.key) {
+                    case 'ArrowLeft':  dx = -step; break;
+                    case 'ArrowRight': dx = step;  break;
+                    case 'ArrowUp':    dy = -step; break;
+                    case 'ArrowDown':  dy = step;  break;
+                    default: return;
+                }
+
+                e.preventDefault();
+                this.nudge(dx, dy);
+            }
+
+            // 選択中の点を元画像px単位で移動。~800ms以内の連続操作は1つの履歴にまとめる
+            nudge(dx, dy) {
+                if (!this.image || this.busy || this.selectedIndex < 0 || this.draggingIndex >= 0) return;
+
+                const now = performance.now();
+                if (now - this.lastNudgeTime > this.nudgeMergeMs || this.lastNudgeIndex !== this.selectedIndex) {
+                    this.pushHistory();
+                }
+                this.lastNudgeTime = now;
+                this.lastNudgeIndex = this.selectedIndex;
+
+                const p = this.points[this.selectedIndex];
+                this.points[this.selectedIndex] = this.clampImagePoint(p.x + dx, p.y + dy);
+                this.onPointsChanged();
+            }
+
+            onPointsChanged() {
+                this.pointsVersion++;
+                this.updatePointDisplay();
+                this.drawOriginalImage();
+                this.schedulePreview();
+            }
+
+            schedulePreview() {
+                if (!this.realtimePreview) return;
+                if (this.previewRequested) return;
+                this.previewRequested = true;
+                requestAnimationFrame(() => {
+                    this.previewRequested = false;
+                    if (this.image && !this.busy && this.points.length === this.maxPoints) {
+                        this.performCorrection(true, true);
+                    }
+                });
+            }
+
+            updateControls() {
+                const hasImage = !!this.image;
+                document.getElementById('correctBtn').disabled = !hasImage || this.realtimePreview || this.busy;
+                document.getElementById('undoBtn').disabled = this.history.length === 0 || this.busy;
+                document.querySelectorAll('#pointList .point-item').forEach((btn) => {
+                    btn.disabled = !hasImage;
+                });
+                const canNudge = hasImage && this.selectedIndex >= 0;
+                document.querySelectorAll('#dpad button').forEach((btn) => {
+                    btn.disabled = !canNudge;
+                });
+                document.getElementById('dpadCenter').textContent =
+                    canNudge ? `点${this.selectedIndex + 1}` : '未選択';
+            }
+
+            pushHistory() {
+                this.history.push(this.points.map(p => ({ x: p.x, y: p.y })));
+                if (this.history.length > this.maxHistory) {
+                    this.history.shift();
+                }
+                document.getElementById('undoBtn').disabled = false;
+            }
+
+            undo() {
+                if (this.history.length === 0 || this.draggingIndex >= 0 || this.busy) return;
+                this.points = this.history.pop();
+                this.lastNudgeTime = 0; // 取り消し直後の微調整は新しい履歴にする
+                this.onPointsChanged();
+                this.updateControls();
+            }
+
+            drawPoints() {
+                const ctx = this.originalCtx;
+                const pts = this.points.map(p => this.toDisplay(p));
+
+                // 四角形の辺(暗い液晶の上でも見えるよう白で縁取り)
+                if (pts.length === this.maxPoints) {
+                    ctx.save();
+                    ctx.lineJoin = 'round';
+                    ctx.beginPath();
+                    pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+                    ctx.closePath();
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                    ctx.strokeStyle = '#111';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.restore();
+                }
+
+                pts.forEach((p, index) => {
+                    // 選択中の点は外側にリングを重ねて強調
+                    if (index === this.selectedIndex) {
+                        ctx.beginPath();
+                        ctx.arc(p.x, p.y, 13, 0, 2 * Math.PI);
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 4;
+                        ctx.stroke();
+                        ctx.strokeStyle = '#111';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+                    }
+
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 8, 0, 2 * Math.PI);
+                    ctx.fillStyle = '#111';
+                    ctx.fill();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    ctx.fillStyle = '#fff';
+                    ctx.font = 'bold 11px Arial, sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(String(index + 1), p.x, p.y + 0.5);
+                });
+            }
+
+            // ---- ルーペ ----
+            getLoupeSize() {
+                const base = Math.min(this.displayWidth, this.displayHeight) * 0.45;
+                return Math.round(Math.max(80, Math.min(160, base)));
+            }
+
+            // 選択中の点を覆わず、他の点を覆う数が最少の隅(同数は前回の隅→点と反対側の隅の順)
+            chooseLoupeRect(dp, size) {
+                const m = 8;
+                const W = this.displayWidth;
+                const H = this.displayHeight;
+                const xs = { L: m, R: Math.max(m, W - size - m) };
+                const ys = { T: m, B: Math.max(m, H - size - m) };
+                const rectOf = (corner) => ({ x: xs[corner[1]], y: ys[corner[0]], size });
+                const covers = (rc, pt, pad) =>
+                    pt.x >= rc.x - pad && pt.x <= rc.x + rc.size + pad &&
+                    pt.y >= rc.y - pad && pt.y <= rc.y + rc.size + pad;
+                const pad = 16;
+
+                const order = dp.x < W / 2 ? ['TR', 'BR', 'TL', 'BL'] : ['TL', 'BL', 'TR', 'BR'];
+                const others = this.points
+                    .filter((_, i) => i !== this.selectedIndex)
+                    .map(p => this.toDisplay(p));
+
+                let chosen = null;
+                let best = Infinity;
+                // 前回の隅を先頭に置き、同数なら前回の隅を維持(ドラッグ中のちらつき防止)
+                const candidates = this.loupeCorner ? [this.loupeCorner, ...order.filter(c => c !== this.loupeCorner)] : order;
+                candidates.forEach((c) => {
+                    const rc = rectOf(c);
+                    if (covers(rc, dp, pad)) return;
+                    const n = others.filter(o => covers(rc, o, 12)).length;
+                    if (n < best) { best = n; chosen = c; }
+                });
+                if (!chosen) chosen = order[0];
+
+                this.loupeCorner = chosen;
+                return rectOf(chosen);
+            }
+
+            isInsideLoupe(pos) {
+                const r = this.loupeRect;
+                if (!r) return false;
+                const half = r.size / 2;
+                const dx = pos.x - (r.x + half);
+                const dy = pos.y - (r.y + half);
+                return dx * dx + dy * dy <= half * half;
+            }
+
+            drawLoupe() {
+                this.loupeRect = null;
+                if (!this.image || this.selectedIndex < 0) return;
+
+                const ctx = this.originalCtx;
+                const p = this.points[this.selectedIndex];
+                const dp = this.toDisplay(p);
+                const size = this.getLoupeSize();
+                const rect = this.chooseLoupeRect(dp, size);
+                this.loupeRect = rect;
+
+                const r = size / 2;
+                const cx = rect.x + r;
+                const cy = rect.y + r;
+                // 倍率は表示に対する倍率。1元画像px あたりのルーペ上の表示px
+                const magX = this.viewScaleX * this.loupeZoom;
+                const magY = this.viewScaleY * this.loupeZoom;
+
+                // ルーペ中心 = 点が指す画素の中心(p + 0.5)
+                const icx = p.x + 0.5;
+                const icy = p.y + 0.5;
+                const imgW = this.image.width;
+                const imgH = this.image.height;
+                const sx0 = Math.max(0, icx - r / magX);
+                const sy0 = Math.max(0, icy - r / magY);
+                const sx1 = Math.min(imgW, icx + r / magX);
+                const sy1 = Math.min(imgH, icy + r / magY);
+                // 元画像px → ルーペ上の表示座標
+                const mapX = (ix) => cx + (ix - icx) * magX;
+                const mapY = (iy) => cy + (iy - icy) * magY;
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+                ctx.clip();
+
+                // 画像外は灰色
+                ctx.fillStyle = '#d9d9d9';
+                ctx.fillRect(rect.x, rect.y, size, size);
+
+                if (sx1 > sx0 && sy1 > sy0) {
+                    // 高倍率では画素の境界をくっきり見せる
+                    ctx.imageSmoothingEnabled = magX < 2.5;
+                    ctx.drawImage(
+                        this.image,
+                        sx0, sy0, sx1 - sx0, sy1 - sy0,
+                        mapX(sx0), mapY(sy0), (sx1 - sx0) * magX, (sy1 - sy0) * magY
+                    );
+                    ctx.imageSmoothingEnabled = true;
+                }
+
+                // 四角形の辺(ルーペ内)
+                if (this.points.length === this.maxPoints) {
+                    ctx.beginPath();
+                    this.points.forEach((q, i) => {
+                        const lx = mapX(q.x + 0.5);
+                        const ly = mapY(q.y + 0.5);
+                        if (i === 0) ctx.moveTo(lx, ly); else ctx.lineTo(lx, ly);
+                    });
+                    ctx.closePath();
+                    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    ctx.strokeStyle = '#111';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                // 十字線(中心は隙間をあけて対象画素を見せる)
+                const gap = 7;
+                const cross = () => {
+                    ctx.beginPath();
+                    ctx.moveTo(cx - r, cy); ctx.lineTo(cx - gap, cy);
+                    ctx.moveTo(cx + gap, cy); ctx.lineTo(cx + r, cy);
+                    ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy - gap);
+                    ctx.moveTo(cx, cy + gap); ctx.lineTo(cx, cy + r);
+                };
+                cross();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                cross();
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // 点位置(高倍率では対象画素の枠、低倍率では小さな円)
+                ctx.beginPath();
+                if (magX >= 6) {
+                    ctx.rect(cx - magX / 2, cy - magY / 2, magX, magY);
+                } else {
+                    ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+                }
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // ラベル
+                const label = `点${this.selectedIndex + 1}  ${this.loupeZoom}x`;
+                ctx.font = '11px -apple-system, "Segoe UI", sans-serif';
+                const tw = ctx.measureText(label).width + 12;
+                const ty = cy + r - 22;
+                ctx.fillStyle = 'rgba(17, 17, 17, 0.75)';
+                ctx.fillRect(cx - tw / 2, ty, tw, 16);
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, cx, ty + 8.5);
+
+                ctx.restore();
+
+                // 外枠
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 4;
+                ctx.stroke();
+                ctx.strokeStyle = '#111';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            updatePointDisplay() {
+                for (let i = 0; i < this.maxPoints; i++) {
+                    const el = document.getElementById(`point${i + 1}`);
+                    const coord = i < this.points.length
+                        ? `(${Math.round(this.points[i].x)}, ${Math.round(this.points[i].y)})`
+                        : '未配置';
+                    el.replaceChildren();
+                    const label = document.createElement('span');
+                    label.className = 'pi-label';
+                    label.textContent = `点${i + 1} ${POINT_NAMES[i]}`;
+                    const value = document.createElement('span');
+                    value.className = 'pi-coord';
+                    value.textContent = coord;
+                    el.append(label, value);
+                    const active = i === this.selectedIndex;
+                    el.classList.toggle('active', active);
+                    el.setAttribute('aria-pressed', active ? 'true' : 'false');
+                }
+            }
+
+            // 重い処理の前にステータスを描画させてから実行
+            runHeavy(message, fn) {
+                if (this.busy || !this.image) return;
+                this.busy = true;
+                this.updateControls();
+                this.showStatus(message, 'info', 0);
+                setTimeout(() => {
+                    try {
+                        fn();
+                    } finally {
+                        this.busy = false;
+                        this.updateControls();
+                    }
+                }, 30);
+            }
+
+            // preview=true: 出力の長辺を previewMaxSide に縮小して計算(表示専用)
+            // preview=false: フル解像度で計算し、ダウンロード用に保持
+            performCorrection(quiet = false, preview = false) {
+                if (!this.image || this.points.length !== this.maxPoints) {
+                    if (!quiet) this.showStatus('4つの点を選択してください。', 'error');
+                    return false;
+                }
+
+                try {
+                    // 点は元画像px座標で保持しているのでそのまま使う
+                    const srcPoints = this.points.map(p => [p.x, p.y]);
+                    const { width, height, dstPoints } = this.calculateOptimalRectangle(srcPoints);
+
+                    let outScale = 1;
+                    if (preview) {
+                        const longSide = Math.max(width, height);
+                        if (longSide > this.previewMaxSide) outScale = this.previewMaxSide / longSide;
+                    }
+                    const outW = Math.max(1, width * outScale);
+                    const outH = Math.max(1, height * outScale);
+                    const scaledDst = dstPoints.map(([u, v]) => [u * outScale, v * outScale]);
+
+                    const matrix = this.calculatePerspectiveTransform(srcPoints, scaledDst);
+                    const resultCanvas = this.applyTransform(matrix, outW, outH);
+
+                    this.correctedWidth = width;
+                    this.correctedHeight = height;
+                    this.displayedResult = { canvas: resultCanvas, width, height };
+                    this.renderCorrected();
+
+                    if (!preview) {
+                        this.resultCanvas = resultCanvas;
+                        this.resultVersion = this.pointsVersion;
+                    }
+
+                    document.getElementById('downloadBtn').disabled = false;
+                    if (!quiet) this.showStatus(`補正が完了しました(${Math.round(width)}×${Math.round(height)}px)`, 'success');
+                    return true;
+                } catch (error) {
+                    console.error('補正エラー:', error);
+                    if (!quiet) this.showStatus('補正に失敗しました。点の位置を確認してください。', 'error');
+                    return false;
+                }
+            }
+
+            calculateOptimalRectangle(srcPoints) {
+                const [p1, p2, p3, p4] = srcPoints;
+
+                const top = this.distance(p1, p2);
+                const right = this.distance(p2, p3);
+                const bottom = this.distance(p3, p4);
+                const left = this.distance(p4, p1);
+
+                const widthAvg = (top + bottom) / 2;
+                const heightAvg = (left + right) / 2;
+
+                // 4点の射影幾何から真のアスペクト比(W/H)を推定
+                const ratio = this.estimateAspectRatio(srcPoints);
+
+                let width, height;
+                if (ratio !== null) {
+                    // 推定成功: 出力ピクセル数の総量(面積)を保ちつつアスペクト比を真値に揃える
+                    const area = widthAvg * heightAvg;
+                    width = Math.sqrt(area * ratio);
+                    height = Math.sqrt(area / ratio);
+                } else {
+                    // 退化ケース(消失点が無限遠など): 従来の対辺平均にフォールバック
+                    width = widthAvg;
+                    height = heightAvg;
+                }
+
+                const minSize = 50;
+                const finalWidth = Math.max(width, minSize);
+                const finalHeight = Math.max(height, minSize);
+
+                const dstPoints = [
+                    [0, 0],
+                    [finalWidth, 0],
+                    [finalWidth, finalHeight],
+                    [0, finalHeight]
+                ];
+
+                return { width: finalWidth, height: finalHeight, dstPoints };
+            }
+
+            // Zhang & He (2007) "Whiteboard Scanning and Image Enhancement" に基づく
+            // 主点=画像中心と仮定し、4点が長方形の像である制約から焦点距離を逆算してW/Hを推定
+            estimateAspectRatio(srcPoints) {
+                const cx = this.image.width / 2;
+                const cy = this.image.height / 2;
+
+                // 主点を原点にした同次座標
+                const m1 = [srcPoints[0][0] - cx, srcPoints[0][1] - cy, 1];
+                const m2 = [srcPoints[1][0] - cx, srcPoints[1][1] - cy, 1];
+                const m3 = [srcPoints[2][0] - cx, srcPoints[2][1] - cy, 1];
+                const m4 = [srcPoints[3][0] - cx, srcPoints[3][1] - cy, 1];
+
+                const cross = (a, b) => [
+                    a[1] * b[2] - a[2] * b[1],
+                    a[2] * b[0] - a[0] * b[2],
+                    a[0] * b[1] - a[1] * b[0],
+                ];
+                const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+                const eps = 1e-10;
+                const denomK2 = dot(cross(m2, m4), m3);
+                const denomK3 = dot(cross(m4, m2), m3);
+                if (Math.abs(denomK2) < eps || Math.abs(denomK3) < eps) return null;
+
+                const k2 = dot(cross(m1, m4), m3) / denomK2;
+                const k3 = dot(cross(m1, m2), m3) / denomK3;
+
+                const n2 = [k2 * m2[0] - m1[0], k2 * m2[1] - m1[1], k2 * m2[2] - m1[2]];
+                const n3 = [k3 * m4[0] - m1[0], k3 * m4[1] - m1[1], k3 * m4[2] - m1[2]];
+
+                // n2.z または n3.z がほぼ0 = 消失点が無限遠 = 既にほぼ正面像
+                if (Math.abs(n2[2]) < eps || Math.abs(n3[2]) < eps) return null;
+
+                // 直交制約 v1^T ω v2 = 0 (ω=diag(1/f², 1/f², 1)) から焦点距離を解く
+                const fSq = -((n2[0] * n3[0]) + (n2[1] * n3[1])) / (n2[2] * n3[2]);
+                if (!isFinite(fSq) || fSq <= 0) return null;
+
+                // (W/H)² = (n2^T ω n2) / (n3^T ω n3)
+                const num = (n2[0] * n2[0] + n2[1] * n2[1]) / fSq + n2[2] * n2[2];
+                const den = (n3[0] * n3[0] + n3[1] * n3[1]) / fSq + n3[2] * n3[2];
+                if (!isFinite(num) || !isFinite(den) || den < eps) return null;
+
+                const ratioSq = num / den;
+                if (!isFinite(ratioSq) || ratioSq <= 0) return null;
+
+                return Math.sqrt(ratioSq);
+            }
+
+            distance(p1, p2) {
+                const dx = p1[0] - p2[0];
+                const dy = p1[1] - p2[1];
+                return Math.sqrt(dx * dx + dy * dy);
+            }
+
+            calculatePerspectiveTransform(src, dst) {
+                // 8点連立方程式を解いて変換行列を求める
+                const A = [];
+                const B = [];
+
+                for (let i = 0; i < 4; i++) {
+                    const [x, y] = src[i];
+                    const [u, v] = dst[i];
+
+                    A.push([x, y, 1, 0, 0, 0, -u*x, -u*y]);
+                    A.push([0, 0, 0, x, y, 1, -v*x, -v*y]);
+                    B.push(u);
+                    B.push(v);
+                }
+
+                const h = this.solveLinearSystem(A, B);
+                return [
+                    [h[0], h[1], h[2]],
+                    [h[3], h[4], h[5]],
+                    [h[6], h[7], 1]
+                ];
+            }
+
+            solveLinearSystem(A, B) {
+                // ガウス消去法で連立方程式を解く
+                const n = A.length;
+                const augmented = A.map((row, i) => [...row, B[i]]);
+
+                // 前進消去
+                for (let i = 0; i < n; i++) {
+                    // ピボット選択
+                    let maxRow = i;
+                    for (let k = i + 1; k < n; k++) {
+                        if (Math.abs(augmented[k][i]) > Math.abs(augmented[maxRow][i])) {
+                            maxRow = k;
+                        }
+                    }
+                    [augmented[i], augmented[maxRow]] = [augmented[maxRow], augmented[i]];
+
+                    // 消去
+                    for (let k = i + 1; k < n; k++) {
+                        const factor = augmented[k][i] / augmented[i][i];
+                        for (let j = i; j < n + 1; j++) {
+                            augmented[k][j] -= factor * augmented[i][j];
+                        }
+                    }
+                }
+
+                // 後退代入
+                const x = new Array(n);
+                for (let i = n - 1; i >= 0; i--) {
+                    x[i] = augmented[i][n];
+                    for (let j = i + 1; j < n; j++) {
+                        x[i] -= augmented[i][j] * x[j];
+                    }
+                    x[i] /= augmented[i][i];
+                }
+
+                return x;
+            }
+
+            // 元画像の画素データ(画像ごとに1回だけ取得してキャッシュ)
+            getSourceImageData() {
+                if (!this.srcImageData) {
+                    const srcCanvas = document.createElement('canvas');
+                    srcCanvas.width = this.image.width;
+                    srcCanvas.height = this.image.height;
+                    const srcCtx = srcCanvas.getContext('2d');
+                    srcCtx.drawImage(this.image, 0, 0);
+                    this.srcImageData = srcCtx.getImageData(0, 0, this.image.width, this.image.height);
+                }
+                return this.srcImageData;
+            }
+
+            applyTransform(matrix, outputWidth, outputHeight) {
+                try {
+                    if (outputWidth <= 0 || outputHeight <= 0) {
+                        throw new Error('無効な出力サイズ: ' + outputWidth + 'x' + outputHeight);
+                    }
+
+                    const resultCanvas = document.createElement('canvas');
+                    resultCanvas.width = Math.floor(outputWidth);
+                    resultCanvas.height = Math.floor(outputHeight);
+                    const resultCtx = resultCanvas.getContext('2d');
+
+                    const srcData = this.getSourceImageData().data;
+
+                    const outputImageData = resultCtx.createImageData(resultCanvas.width, resultCanvas.height);
+                    const outputData = outputImageData.data;
+
+                    const invMatrix = this.invertMatrix(matrix);
+
+                    const imgW = this.image.width;
+                    const imgH = this.image.height;
+
+                    for (let y = 0; y < resultCanvas.height; y++) {
+                        for (let x = 0; x < resultCanvas.width; x++) {
+                            const srcCoord = this.transformPoint(x, y, invMatrix);
+                            const srcX = srcCoord[0];
+                            const srcY = srcCoord[1];
+
+                            const dstIndex = (y * resultCanvas.width + x) * 4;
+
+                            if (srcX >= 0 && srcX < imgW && srcY >= 0 && srcY < imgH) {
+                                // バイリニア補間: 周囲4ピクセルの重み付き平均
+                                const x0 = Math.floor(srcX);
+                                const y0 = Math.floor(srcY);
+                                const x1 = Math.min(x0 + 1, imgW - 1);
+                                const y1 = Math.min(y0 + 1, imgH - 1);
+                                const fx = srcX - x0;
+                                const fy = srcY - y0;
+
+                                const i00 = (y0 * imgW + x0) * 4;
+                                const i10 = (y0 * imgW + x1) * 4;
+                                const i01 = (y1 * imgW + x0) * 4;
+                                const i11 = (y1 * imgW + x1) * 4;
+
+                                const w00 = (1 - fx) * (1 - fy);
+                                const w10 = fx * (1 - fy);
+                                const w01 = (1 - fx) * fy;
+                                const w11 = fx * fy;
+
+                                outputData[dstIndex]     = srcData[i00]     * w00 + srcData[i10]     * w10 + srcData[i01]     * w01 + srcData[i11]     * w11;
+                                outputData[dstIndex + 1] = srcData[i00 + 1] * w00 + srcData[i10 + 1] * w10 + srcData[i01 + 1] * w01 + srcData[i11 + 1] * w11;
+                                outputData[dstIndex + 2] = srcData[i00 + 2] * w00 + srcData[i10 + 2] * w10 + srcData[i01 + 2] * w01 + srcData[i11 + 2] * w11;
+                                outputData[dstIndex + 3] = srcData[i00 + 3] * w00 + srcData[i10 + 3] * w10 + srcData[i01 + 3] * w01 + srcData[i11 + 3] * w11;
+                            } else {
+                                outputData[dstIndex] = 255;
+                                outputData[dstIndex + 1] = 255;
+                                outputData[dstIndex + 2] = 255;
+                                outputData[dstIndex + 3] = 255;
+                            }
+                        }
+                    }
+
+                    resultCtx.putImageData(outputImageData, 0, 0);
+                    return resultCanvas;
+                } catch (error) {
+                    console.error('変換エラー:', error);
+                    throw error;
+                }
+            }
+
+            // 補正結果の表示: 表示サイズはフル解像度の寸法から決める(プレビューと実行で大きさが変わらない)
+            renderCorrected() {
+                const res = this.displayedResult;
+                if (!res) return;
+
+                document.getElementById('correctedPlaceholder').style.display = 'none';
+                this.correctedCanvas.style.display = '';
+
+                const maxW = Math.max(100, this.correctedStage.clientWidth - 2);
+                const maxH = Math.max(160, Math.floor(this.viewportHeight() * 0.75));
+                const ratio = Math.min(1, maxW / res.width, maxH / res.height);
+                const displayWidth = Math.max(1, Math.floor(res.width * ratio));
+                const displayHeight = Math.max(1, Math.floor(res.height * ratio));
+
+                this.applyCanvasDpr(this.correctedCanvas, this.correctedCtx, displayWidth, displayHeight);
+
+                this.correctedCtx.imageSmoothingQuality = 'high';
+                this.correctedCtx.fillStyle = 'white';
+                this.correctedCtx.fillRect(0, 0, displayWidth, displayHeight);
+                this.correctedCtx.drawImage(res.canvas, 0, 0, displayWidth, displayHeight);
+            }
+
+            transformPoint(x, y, matrix) {
+                const w = matrix[2][0] * x + matrix[2][1] * y + matrix[2][2];
+                const newX = (matrix[0][0] * x + matrix[0][1] * y + matrix[0][2]) / w;
+                const newY = (matrix[1][0] * x + matrix[1][1] * y + matrix[1][2]) / w;
+                return [newX, newY];
+            }
+
+            invertMatrix(matrix) {
+                // 3x3行列の逆行列を計算
+                const det = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
+                           matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
+                           matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+
+                if (Math.abs(det) < 1e-10) {
+                    throw new Error('行列が特異です');
+                }
+
+                const inv = [
+                    [
+                        (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) / det,
+                        (matrix[0][2] * matrix[2][1] - matrix[0][1] * matrix[2][2]) / det,
+                        (matrix[0][1] * matrix[1][2] - matrix[0][2] * matrix[1][1]) / det
+                    ],
+                    [
+                        (matrix[1][2] * matrix[2][0] - matrix[1][0] * matrix[2][2]) / det,
+                        (matrix[0][0] * matrix[2][2] - matrix[0][2] * matrix[2][0]) / det,
+                        (matrix[0][2] * matrix[1][0] - matrix[0][0] * matrix[1][2]) / det
+                    ],
+                    [
+                        (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]) / det,
+                        (matrix[0][1] * matrix[2][0] - matrix[0][0] * matrix[2][1]) / det,
+                        (matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0]) / det
+                    ]
+                ];
+
+                return inv;
+            }
+
+            // ダウンロードは常にフル解像度。現在の点位置の結果がなければ計算してから保存
+            downloadResult() {
+                if (!this.image) {
+                    this.showStatus('ダウンロードできる結果がありません。', 'error');
+                    return;
+                }
+                if (this.resultCanvas && this.resultVersion === this.pointsVersion) {
+                    this.saveCanvas(this.resultCanvas);
+                    return;
+                }
+                this.runHeavy('フル解像度で補正中…', () => {
+                    if (this.performCorrection(true, false) && this.resultCanvas) {
+                        this.saveCanvas(this.resultCanvas);
+                    } else {
+                        this.showStatus('補正に失敗しました。点の位置を確認してください。', 'error');
+                    }
+                });
+            }
+
+            saveCanvas(canvas) {
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        this.showStatus('画像の書き出しに失敗しました。', 'error');
+                        return;
+                    }
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.download = 'corrected_image.png';
+                    link.href = url;
+                    document.body.appendChild(link);
+                    link.click();
+                    link.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                    this.showStatus(`ダウンロードしました(${canvas.width}×${canvas.height}px)`, 'success');
+                }, 'image/png');
+            }
+
+            showStatus(message, type, autoHideMs = 5000) {
+                const status = document.getElementById('status');
+                status.textContent = message;
+                status.className = `status ${type}`;
+                status.style.display = 'block';
+
+                clearTimeout(this.statusTimer);
+                if (autoHideMs > 0) {
+                    this.statusTimer = setTimeout(() => {
+                        status.style.display = 'none';
+                    }, autoHideMs);
+                }
+            }
+        }
+
+        // アプリケーションを初期化
+        document.addEventListener('DOMContentLoaded', () => {
+            new PerspectiveCorrection();
+        });
+    </script>
+
+</body></html>
